@@ -22,24 +22,30 @@ def clean_url(u):
  return urlunsplit((p.scheme,p.netloc.lower(),p.path.rstrip("/"),query,""))
 
 async def resolve_article_url(client, url):
- """Resolve Google News RSS redirects; never return a Google News wrapper as source."""
+ """Resolve Google News links; fall back to the original article link if Google blocks redirects."""
  host=(urlsplit(url).hostname or "").lower()
  if host not in {"news.google.com", "www.news.google.com"}:
   return clean_url(url)
+ original=clean_url(url)
  try:
   response=await client.get(url,follow_redirects=True,timeout=10)
   final=clean_url(str(response.url))
   final_host=(urlsplit(final).hostname or "").lower()
-  if final_host in {"news.google.com","www.news.google.com"}:
-   log.warning("Google News link did not resolve to publisher: %s",url[:180])
-   return None
   if response.status_code >= 400:
    log.warning("Article redirect returned HTTP %s: %s",response.status_code,url[:180])
    return None
+  if final_host in {"consent.google.com","www.consent.google.com"}:
+   # The server may be routed through a GDPR consent page. Keep the original
+   # Google News article URL; it is a usable article link, unlike the consent URL.
+   log.info("Google consent blocked publisher redirect; keeping Google News article URL")
+   return original
+  if final_host in {"news.google.com","www.news.google.com"}:
+   log.warning("Google News link did not resolve to publisher: %s",url[:180])
+   return original
   return final
  except (httpx.HTTPError,ValueError) as exc:
   log.warning("Could not resolve Google News article link: %s",exc)
-  return None
+  return original
 def parse_date(e):
  v=e.get("published") or e.get("updated")
  if v:
