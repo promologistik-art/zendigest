@@ -83,7 +83,7 @@ async def run_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         # Preview is deliberately read-only: do not insert, annotate, mark,
         # or publish anything to the configured channel.
-        fresh = await collect()
+        fresh = await collect(settings.fetch_hours)
         pending = db.pending(settings.fetch_hours)
         by_url = {item["url"]: item for item in pending}
         for item in fresh:
