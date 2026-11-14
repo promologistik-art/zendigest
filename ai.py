@@ -82,7 +82,7 @@ class Editor:
                     # One corrective request on the same model.
                     if attempt == 1:
                         prompt += (
-                            "\\n\\nВАЖНО: предыдущий ответ оказался некорректным JSON. "
+                            "\n\nВАЖНО: предыдущий ответ оказался некорректным JSON. "
                             "Повтори ответ строго как один корректный JSON-массив, "
                             "без Markdown и пояснений."
                         )
@@ -132,7 +132,7 @@ class Editor:
 
             category = item.get("category")
             if category not in CATEGORIES:
-                category = "Кино"
+                category = "Культура"
 
             clean.append({
                 "url": url,
