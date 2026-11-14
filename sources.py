@@ -76,7 +76,7 @@ async def read_feed(client,url):
   out.append({"url":url,"title":title,"description":strip(e.get("summary","")),
    "source":e.get("source",{}).get("title","") or urlsplit(url).netloc,"published_at":dt.isoformat()})
  return out
-async def collect():
+async def collect(max_age_hours=48):
  async with httpx.AsyncClient(timeout=httpx.Timeout(18,connect=8),follow_redirects=True,
    headers={"User-Agent":"ZenDigest/1.0 RSS reader"}) as client:
   tasks=[read_feed(client,u) for u in FEEDS]
@@ -86,4 +86,20 @@ async def collect():
  for r in results:
   if isinstance(r,Exception): log.warning("Feed failed: %s",r); continue
   for x in r: unique.setdefault(x["url"],x)
- return list(unique.values())
+
+ # Drop stale RSS entries before they can reach the database or editor.
+ cutoff = datetime.now(timezone.utc) - timedelta(hours=max(1, max_age_hours))
+ fresh = []
+ for item in unique.values():
+  try:
+   published = datetime.fromisoformat(item["published_at"])
+   if published.tzinfo is None:
+    published = published.replace(tzinfo=timezone.utc)
+  except (KeyError, TypeError, ValueError):
+   log.warning("Skipping article with invalid publication date: %s", item.get("url", ""))
+   continue
+  if published >= cutoff:
+   fresh.append(item)
+ log.info("RSS collection: total=%s fresh_within_%sh=%s",
+          len(unique), max_age_hours, len(fresh))
+ return fresh
