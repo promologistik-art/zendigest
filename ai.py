@@ -146,12 +146,15 @@ class Editor:
             if not isinstance(item, dict):
                 continue
             url = item.get("url")
+            title_ru = item.get("title_ru")
             summary = item.get("summary")
             why = item.get("why")
             if (
                 not isinstance(url, str)
                 or url not in allowed_urls
                 or url in seen
+                or not isinstance(title_ru, str)
+                or not title_ru.strip()
                 or not isinstance(summary, str)
                 or not summary.strip()
                 or not isinstance(why, str)
@@ -165,6 +168,7 @@ class Editor:
 
             clean.append({
                 "url": url,
+                "title_ru": title_ru.strip()[:300],
                 "category": category,
                 "summary": summary.strip()[:650],
                 "why": why.strip()[:250],
@@ -203,6 +207,7 @@ class Editor:
 малозначительные перепечатки и дубли.
 Верни только JSON-массив объектов с полями:
 url (строго дословно из входных данных),
+title_ru (краткий естественный заголовок на русском языке; переведи смысл оригинального title, не добавляй фактов),
 category (одно из: Кино, Сериалы, Книги, Музыка),
 summary (1-2 коротких предложения по-русски),
 why (коротко объясни значимость новости).
@@ -251,6 +256,7 @@ why (коротко объясни значимость новости).
             final_data.append({
                 "url": candidate["url"],
                 "title": original["title"],
+                "title_ru": candidate["title_ru"],
                 "source": original.get("source", ""),
                 "summary": candidate["summary"],
                 "why": candidate["why"],
