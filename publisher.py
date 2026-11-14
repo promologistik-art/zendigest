@@ -6,7 +6,7 @@ log=logging.getLogger(__name__)
 def render(items,date):
  parts=[f"🎬 <b>ZenDigest · {html.escape(date)}</b>",""]
  for i,x in enumerate(items,1):
-  parts += [f"<b>{i}. {html.escape(x['title'])}</b>",f"<i>{html.escape(x['category'])}</i>",
+  parts += [f"<b>{i}. {html.escape(x.get('title_ru') or x['title'])}</b>",f"<i>{html.escape(x['category'])}</i>",
    html.escape(x['summary']),f"💡 {html.escape(x['why'])}",
    f"🔗 <a href=\"{html.escape(x['url'],quote=True)}\">Источник</a>",""]
  parts.append("<i>Кино · Сериалы · Книги · Музыка</i>")
