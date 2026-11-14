@@ -31,6 +31,18 @@ class Editor:
         self.batch_size = 15
 
     @staticmethod
+    def _status_code(exc: Exception):
+        return getattr(exc, "status_code", None) or getattr(exc, "code", None)
+
+    @classmethod
+    def _is_quota_exhausted(cls, exc: Exception) -> bool:
+        code = cls._status_code(exc)
+        if code == 429 or str(code) == "429":
+            return True
+        message = str(exc).lower()
+        return "resource_exhausted" in message or "quota exceeded" in message
+
+    @staticmethod
     def _is_retryable(exc: Exception) -> bool:
         code = getattr(exc, "status_code", None)
         if code in RETRYABLE_CODES:
@@ -90,19 +102,36 @@ class Editor:
                     break
                 except Exception as exc:
                     last_error = exc
+                    code = self._status_code(exc)
                     if not self._is_retryable(exc):
-                        log.exception("Gemini request failed with a non-retryable error")
+                        log.exception(
+                            "Gemini request failed: model=%s code=%s",
+                            model, code,
+                        )
                         raise
+
+                    if self._is_quota_exhausted(exc):
+                        log.warning(
+                            "Gemini quota exhausted: model=%s code=%s; "
+                            "skipping retry and switching to fallback if available. error=%s",
+                            model, code, str(exc)[:500],
+                        )
+                        break
+
                     log.warning(
-                        "Gemini temporary failure: model=%s attempt=%s error=%s",
-                        model, attempt, exc,
+                        "Gemini temporary failure: model=%s attempt=%s/2 "
+                        "code=%s error=%s",
+                        model, attempt, code, str(exc)[:500],
                     )
-                    # Retry transient errors once, then switch to the fallback.
+                    # Retry transient service/network errors once, then switch models.
                     if attempt == 2:
                         break
 
             if model_index + 1 < len(models):
-                log.warning("Switching Gemini model: %s -> %s", model, models[model_index + 1])
+                log.warning(
+                    "Switching Gemini model: %s -> %s",
+                    model, models[model_index + 1],
+                )
 
         raise RuntimeError("All Gemini models failed; no digest was produced") from last_error
 
@@ -168,7 +197,7 @@ class Editor:
             "Ты редактор русского дайджеста ZenDigest о кино, сериалах, книгах и музыке. "
             "Выбери наиболее значимые новости из этой партии. Не заполняй лимит искусственно."
         )
-        return f"""{instruction}
+        return f""" {instruction}
 Приоритет: подтверждённые анонсы, даты релизов, награды, важные культурные события,
 крупные релизы и значимые изменения в индустрии. Исключи слухи, рекламу,
 малозначительные перепечатки и дубли.
