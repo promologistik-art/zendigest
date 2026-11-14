@@ -37,7 +37,7 @@ def load_settings() -> Settings:
         raise RuntimeError("Initial version is locked to @zentestdigest; do not change without owner approval")
     hour=int(os.getenv("PUBLISH_HOUR","8")); minute=int(os.getenv("PUBLISH_MINUTE","0"))
     if not 0<=hour<=23 or not 0<=minute<=59: raise RuntimeError("Invalid publish time")
-    return Settings(token,admins,channel,key,os.getenv("GEMINI_MODEL","gemini-2.5-flash").strip(),
+    return Settings(token,admins,channel,key,os.getenv("GEMINI_MODEL","gemini-3.8-flash").strip(),
         Path(os.getenv("DATABASE_PATH","/home/zendigest/data/zendigest.sqlite3")),
         Path(os.getenv("LOG_PATH","/home/zendigest/logs/zendigest.log")),
         ZoneInfo(os.getenv("TIMEZONE","Etc/GMT-4")),hour,minute,
