@@ -14,7 +14,7 @@ async def start(update:Update,ctx:ContextTypes.DEFAULT_TYPE):
   await update.effective_message.reply_text("ZenDigest работает. Команды управления доступны администратору.")
   return
  await update.effective_message.reply_text("ZenDigest запущен.\n/status — состояние\n/run — тестовый выпуск\n/help — помощь")
-async def help_cmd(update,ctx): await start(update,ctx)
+async def help_cmd(update,ctx): await start(update,ctx)\nasync def myid(update,ctx):\n await update.effective_message.reply_text(f"Ваш Telegram ID: {update.effective_user.id}")
 async def status(update,ctx):
  s=ctx.application.bot_data["settings"]
  if not admin(update,s):return
@@ -40,5 +40,5 @@ async def scheduled(ctx):
 def register(app,settings,db,editor):
  app.bot_data.update(settings=settings,db=db,editor=editor)
  app.add_handler(CommandHandler("start",start)); app.add_handler(CommandHandler("help",help_cmd))
- app.add_handler(CommandHandler("status",status)); app.add_handler(CommandHandler("run",run_cmd))
+ app.add_handler(CommandHandler("status",status)); app.add_handler(CommandHandler("run",run_cmd))\n app.add_handler(CommandHandler("myid",myid))
  app.job_queue.run_daily(scheduled,time=time(settings.hour,settings.minute,tzinfo=settings.timezone),name="daily-digest")
