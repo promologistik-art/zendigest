@@ -1,0 +1,25 @@
+[Unit]
+Description=ZenDigest Telegram news digest
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zendigest
+Group=zendigest
+WorkingDirectory=/home/zendigest/app
+EnvironmentFile=/home/zendigest/.env
+ExecStart=/home/zendigest/venv/bin/python /home/zendigest/app/main.py
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/zendigest/data /home/zendigest/logs
+MemoryMax=450M
+
+[Install]
+WantedBy=multi-user.target
