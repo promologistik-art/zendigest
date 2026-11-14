@@ -24,7 +24,7 @@ class Editor:
     ):
         self.client = genai.Client(
             api_key=key,
-            http_options=types.HttpOptions(timeout=45_000),
+            http_options=types.HttpOptions(timeout=30_000),
         )
         self.model = model
         self.fallback_model = fallback_model
@@ -67,7 +67,7 @@ class Editor:
 
         last_error = None
         for model_index, model in enumerate(models):
-            for attempt, delay in enumerate((0, 2, 5), start=1):
+            for attempt, delay in enumerate((0, 3), start=1):
                 if delay:
                     time.sleep(delay)
                 try:
@@ -97,8 +97,8 @@ class Editor:
                         "Gemini temporary failure: model=%s attempt=%s error=%s",
                         model, attempt, exc,
                     )
-                    # Retry transient errors twice, then switch to the fallback.
-                    if attempt == 3:
+                    # Retry transient errors once, then switch to the fallback.
+                    if attempt == 2:
                         break
 
             if model_index + 1 < len(models):
