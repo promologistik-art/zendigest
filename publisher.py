@@ -24,7 +24,7 @@ def render(items,date):
 async def run_digest(app,db,editor,settings):
  run_id=db.start()
  try:
-  fresh=await collect(); inserted=db.add(fresh); pending=db.pending(settings.fetch_hours)
+  fresh=await collect(settings.fetch_hours); inserted=db.add(fresh); pending=db.pending(settings.fetch_hours)
   if not pending:
    db.finish(run_id,"empty",f"collected={len(fresh)} new={inserted}")
    return {"status":"empty","collected":len(fresh),"new":inserted,"published":0}
