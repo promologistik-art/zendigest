@@ -3,10 +3,19 @@ from datetime import datetime
 from sources import collect
 log=logging.getLogger(__name__)
 
+def _news_date(value):
+ if not value:
+  return "дата не указана"
+ try:
+  parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+  return parsed.strftime("%d.%m.%Y")
+ except (TypeError, ValueError):
+  return str(value)[:10]
+
 def render(items,date):
  parts=[f"🎬 <b>ZenDigest · {html.escape(date)}</b>",""]
  for i,x in enumerate(items,1):
-  parts += [f"<b>{i}. {html.escape(x.get('title_ru') or x['title'])}</b>",f"<i>{html.escape(x['category'])}</i>",
+  parts += [f"<b>{i}. {html.escape(x.get('title_ru') or x['title'])}</b>",f"<i>{html.escape(x['category'])} · Новость: {_news_date(x.get('published_at'))}</i>",
    html.escape(x['summary']),f"💡 {html.escape(x['why'])}",
    f"🔗 <a href=\"{html.escape(x['url'],quote=True)}\">Источник</a>",""]
  parts.append("<i>Кино · Сериалы · Книги · Музыка</i>")
