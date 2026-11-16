@@ -4,12 +4,52 @@ import logging
 from datetime import datetime
 
 import httpx
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from sources import collect, find_article_image
 
 log = logging.getLogger(__name__)
 CAPTION_LIMIT = 1024
 IMAGE_MAX_BYTES = 9_500_000
+IMAGE_MIN_WIDTH = 960
+IMAGE_MIN_HEIGHT = 540
+IMAGE_TARGET = (1280, 720)
+IMAGE_JPEG_QUALITY = 88
+
+
+def _prepare_photo(raw: bytes) -> io.BytesIO:
+    """Validate source resolution and crop to 16:9 without enlarging small images."""
+    try:
+        with Image.open(io.BytesIO(raw)) as source:
+            source.load()
+            width, height = source.size
+            if width < IMAGE_MIN_WIDTH or height < IMAGE_MIN_HEIGHT:
+                raise ValueError(
+                    f"Image resolution too small: {width}x{height}; "
+                    f"minimum is {IMAGE_MIN_WIDTH}x{IMAGE_MIN_HEIGHT}"
+                )
+            scale = min(1.0, 1280 / width, 720 / height)
+            resized = (max(1, round(width * scale)), max(1, round(height * scale)))
+            image = ImageOps.fit(
+                source.convert("RGB"), resized,
+                method=Image.Resampling.LANCZOS, centering=(0.5, 0.45),
+            )
+            if image.size != IMAGE_TARGET:
+                image = ImageOps.fit(
+                    image, IMAGE_TARGET,
+                    method=Image.Resampling.LANCZOS, centering=(0.5, 0.45),
+                )
+            output = io.BytesIO()
+            image.save(output, format="JPEG", quality=88, optimize=True)
+            if output.getbuffer().nbytes > IMAGE_MAX_BYTES:
+                raise ValueError("Processed image exceeds Telegram photo upload limit")
+            output.seek(0)
+            output.name = "zendigest-1280x720.jpg"
+            log.info("Image prepared: source=%sx%s output=%sx%s bytes=%s",
+                     width, height, *image.size, output.getbuffer().nbytes)
+            return output
+    except (UnidentifiedImageError, OSError) as exc:
+        raise ValueError("Downloaded file is not a valid supported image") from exc
 
 
 def _news_date(value):
@@ -152,9 +192,9 @@ async def publish_next(app, db, editor, settings):
                 raise ValueError("The selected RSS image URL did not return an image")
             if len(response.content) > IMAGE_MAX_BYTES:
                 raise ValueError("The selected image exceeds Telegram's photo upload limit")
+            raw_image = response.content
 
-        photo = io.BytesIO(response.content)
-        photo.name = "zendigest-photo"
+        photo = _prepare_photo(raw_image)
         sent = await app.bot.send_photo(
             chat_id=settings.channel,
             photo=photo,
