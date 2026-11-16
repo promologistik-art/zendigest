@@ -229,7 +229,7 @@ class _ImageMetaParser(HTMLParser):
                     parts = candidate.strip().split()
                     if not parts:
                         continue
-                    width_match = re.search(r"(\\d+)w$", parts[-1]) if len(parts) > 1 else None
+                    width_match = re.search(r"(\d+)w$", parts[-1]) if len(parts) > 1 else None
                     width = int(width_match.group(1)) if width_match else 0
                     choices.append((width, parts[0]))
                 if choices:
