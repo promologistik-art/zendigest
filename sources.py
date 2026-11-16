@@ -202,26 +202,45 @@ async def collect(max_age_hours=48):
 
 
 class _ImageMetaParser(HTMLParser):
+    """Collect publisher image candidates, preferring Open Graph metadata and large srcset variants."""
     def __init__(self):
         super().__init__()
-        self.image = None
+        self.images = []
 
     def handle_starttag(self, tag, attrs):
-        if self.image:
-            return
         values = {key.lower(): value for key, value in attrs if key and value}
-        if tag.lower() == "meta":
+        tag = tag.lower()
+        if tag == "meta":
             key = (values.get("property") or values.get("name") or "").lower()
             if key in {"og:image", "og:image:secure_url", "twitter:image", "twitter:image:src"}:
-                self.image = values.get("content")
-        elif tag.lower() == "link":
+                value = values.get("content")
+                if value:
+                    self.images.append(value)
+        elif tag == "link":
             rel = (values.get("rel") or "").lower().split()
-            if "image_src" in rel:
-                self.image = values.get("href")
+            value = values.get("href")
+            if "image_src" in rel and value:
+                self.images.append(value)
+        elif tag == "img":
+            srcset = values.get("srcset") or values.get("data-srcset")
+            if srcset:
+                choices = []
+                for candidate in srcset.split(","):
+                    parts = candidate.strip().split()
+                    if not parts:
+                        continue
+                    width_match = re.search(r"(\\d+)w$", parts[-1]) if len(parts) > 1 else None
+                    width = int(width_match.group(1)) if width_match else 0
+                    choices.append((width, parts[0]))
+                if choices:
+                    self.images.append(max(choices)[1])
+            for key in ("data-original", "data-src", "src"):
+                if values.get(key):
+                    self.images.append(values[key])
 
 
-async def find_article_image(article_url):
-    """Read the publisher's Open Graph/Twitter image when the RSS entry has no image."""
+async def find_article_images(article_url):
+    """Return distinct publisher image candidates, including full-size srcset variants."""
     try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(12, connect=6),
@@ -231,14 +250,25 @@ async def find_article_image(article_url):
             response = await client.get(article_url)
             response.raise_for_status()
             parser = _ImageMetaParser()
-            parser.feed(response.text[:500_000])
-            if not parser.image:
-                return None
-            image_url = urljoin(str(response.url), parser.image.strip())
-            parsed = urlsplit(image_url)
-            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-                return None
-            return clean_url(image_url)
+            parser.feed(response.text[:800_000])
+            candidates = []
+            seen = set()
+            for value in parser.images:
+                image_url = urljoin(str(response.url), value.strip())
+                parsed = urlsplit(image_url)
+                if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                    continue
+                image_url = clean_url(image_url)
+                if image_url not in seen:
+                    seen.add(image_url)
+                    candidates.append(image_url)
+            return candidates
     except (httpx.HTTPError, ValueError, TypeError) as exc:
-        log.info("Article image metadata unavailable: %s", type(exc).__name__)
-        return None
+        log.info("Article image candidates unavailable: %s", type(exc).__name__)
+        return []
+
+
+async def find_article_image(article_url):
+    """Backward-compatible helper returning the first publisher image candidate."""
+    candidates = await find_article_images(article_url)
+    return candidates[0] if candidates else None
