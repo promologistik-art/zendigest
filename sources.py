@@ -37,17 +37,20 @@ def clean_url(url):
 
 def _image_url(entry):
     # Prefer publisher-provided media metadata in the RSS entry.
-    for field in ("media_content", "media_thumbnail"):
+    for field in ("media_thumbnail", "media_content"):
         for media in entry.get(field, []) or []:
             url = media.get("url")
-            if url and str(media.get("type", "")).startswith("image"):
-                return clean_url(url)
-            if url:
+            media_type = str(media.get("type", "")).lower()
+            path = urlsplit(url).path.lower() if url else ""
+            is_image = media_type.startswith("image/") or path.endswith(
+                (".jpg", ".jpeg", ".png", ".webp", ".gif")
+            )
+            if url and is_image:
                 return clean_url(url)
 
     for link in entry.get("links", []) or []:
         media_type = str(link.get("type", "")).lower()
-        if link.get("href") and (media_type.startswith("image/") or link.get("rel") == "enclosure"):
+        if link.get("href") and media_type.startswith("image/"):
             return clean_url(link["href"])
 
     # Some feeds embed the lead image in the HTML summary/content.
