@@ -6,7 +6,7 @@ from datetime import datetime
 import httpx
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from sources import collect, find_article_image
+from sources import collect, find_article_images
 
 log = logging.getLogger(__name__)
 CAPTION_LIMIT = 1024
@@ -173,21 +173,46 @@ async def publish_next(app, db, editor, settings):
 
     queue_id = item["id"]
     try:
+        # RSS often contains only a 240x135 thumbnail. Try it first, then
+        # publisher Open Graph/Twitter metadata and full-size images in HTML srcset.
+        candidates = []
+        rss_image = item.get("image_url")
+        if rss_image:
+            candidates.append(rss_image)
+        page_images = await find_article_images(item["article_url"])
+        candidates.extend(page_images)
+
+        unique_candidates = list(dict.fromkeys(candidates))
+        photo = None
+        rejected = []
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(25, connect=10),
             follow_redirects=True,
             headers={"User-Agent": "ZenDigest/1.0 Telegram publisher"},
         ) as client:
-            response = await client.get(item["image_url"])
-            response.raise_for_status()
-            content_type = response.headers.get("content-type", "").lower()
-            if not content_type.startswith("image/"):
-                raise ValueError("The selected RSS image URL did not return an image")
-            if len(response.content) > IMAGE_MAX_BYTES:
-                raise ValueError("The selected image exceeds Telegram's photo upload limit")
-            raw_image = response.content
+            for image_url in unique_candidates:
+                try:
+                    response = await client.get(image_url)
+                    response.raise_for_status()
+                    content_type = response.headers.get("content-type", "").lower()
+                    if not content_type.startswith("image/"):
+                        raise ValueError("URL did not return an image")
+                    if len(response.content) > IMAGE_MAX_BYTES:
+                        raise ValueError("Image exceeds download size limit")
+                    photo = _prepare_photo(response.content)
+                    log.info("Selected article image after validation: %s", image_url[:240])
+                    break
+                except (httpx.HTTPError, ValueError) as exc:
+                    reason = str(exc)[:180] or type(exc).__name__
+                    rejected.append(reason)
+                    log.warning("Skipping unsuitable image candidate: %s", reason)
 
-        photo = _prepare_photo(raw_image)
+        if photo is None:
+            raise ValueError(
+                "No article image met minimum resolution "
+                f"({IMAGE_MIN_WIDTH}x{IMAGE_MIN_HEIGHT}); candidates={len(unique_candidates)}; "
+                f"reasons={'; '.join(rejected[:4]) or 'no image candidates found'}"
+            )
         sent = await app.bot.send_photo(
             chat_id=settings.channel,
             photo=photo,
