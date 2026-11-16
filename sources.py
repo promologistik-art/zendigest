@@ -3,7 +3,8 @@ import logging
 import re
 from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
-from urllib.parse import quote, urlsplit, urlunsplit, parse_qsl, urlencode
+from html.parser import HTMLParser
+from urllib.parse import quote, urlsplit, urlunsplit, urljoin, parse_qsl, urlencode
 
 import feedparser
 import httpx
