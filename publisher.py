@@ -11,8 +11,8 @@ from sources import collect, find_article_image
 log = logging.getLogger(__name__)
 CAPTION_LIMIT = 1024
 IMAGE_MAX_BYTES = 9_500_000
-IMAGE_MIN_WIDTH = 960
-IMAGE_MIN_HEIGHT = 540
+IMAGE_MIN_WIDTH = 1280
+IMAGE_MIN_HEIGHT = 720
 IMAGE_TARGET = (1280, 720)
 IMAGE_JPEG_QUALITY = 88
 
@@ -28,17 +28,10 @@ def _prepare_photo(raw: bytes) -> io.BytesIO:
                     f"Image resolution too small: {width}x{height}; "
                     f"minimum is {IMAGE_MIN_WIDTH}x{IMAGE_MIN_HEIGHT}"
                 )
-            scale = min(1.0, 1280 / width, 720 / height)
-            resized = (max(1, round(width * scale)), max(1, round(height * scale)))
             image = ImageOps.fit(
-                source.convert("RGB"), resized,
+                source.convert("RGB"), IMAGE_TARGET,
                 method=Image.Resampling.LANCZOS, centering=(0.5, 0.45),
             )
-            if image.size != IMAGE_TARGET:
-                image = ImageOps.fit(
-                    image, IMAGE_TARGET,
-                    method=Image.Resampling.LANCZOS, centering=(0.5, 0.45),
-                )
             output = io.BytesIO()
             image.save(output, format="JPEG", quality=88, optimize=True)
             if output.getbuffer().nbytes > IMAGE_MAX_BYTES:
