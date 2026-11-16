@@ -42,8 +42,11 @@ def _image_url(entry):
             url = media.get("url")
             media_type = str(media.get("type", "")).lower()
             path = urlsplit(url).path.lower() if url else ""
-            is_image = media_type.startswith("image/") or path.endswith(
-                (".jpg", ".jpeg", ".png", ".webp", ".gif")
+            is_image = (
+                media_type.startswith("image/")
+                or str(media.get("medium", "")).lower() == "image"
+                or field == "media_thumbnail"
+                or path.endswith((".jpg", ".jpeg", ".png", ".webp", ".gif"))
             )
             if url and is_image:
                 return clean_url(url)
@@ -178,3 +181,46 @@ async def collect(max_age_hours=48):
              len(unique), max_age_hours, len(fresh),
              sum(bool(item.get("image_url")) for item in fresh))
     return fresh
+
+
+class _ImageMetaParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.image = None
+
+    def handle_starttag(self, tag, attrs):
+        if self.image:
+            return
+        values = {key.lower(): value for key, value in attrs if key and value}
+        if tag.lower() == "meta":
+            key = (values.get("property") or values.get("name") or "").lower()
+            if key in {"og:image", "og:image:secure_url", "twitter:image", "twitter:image:src"}:
+                self.image = values.get("content")
+        elif tag.lower() == "link":
+            rel = (values.get("rel") or "").lower().split()
+            if "image_src" in rel:
+                self.image = values.get("href")
+
+
+async def find_article_image(article_url):
+    """Read the publisher's Open Graph/Twitter image when the RSS entry has no image."""
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(12, connect=6),
+            follow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; ZenDigest/1.0)"},
+        ) as client:
+            response = await client.get(article_url)
+            response.raise_for_status()
+            parser = _ImageMetaParser()
+            parser.feed(response.text[:500_000])
+            if not parser.image:
+                return None
+            image_url = urljoin(str(response.url), parser.image.strip())
+            parsed = urlsplit(image_url)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                return None
+            return clean_url(image_url)
+    except (httpx.HTTPError, ValueError, TypeError) as exc:
+        log.info("Article image metadata unavailable: %s", type(exc).__name__)
+        return None
