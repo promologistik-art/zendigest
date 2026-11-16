@@ -1,45 +1,73 @@
-import html, logging
+import io
+import logging
 from datetime import datetime
+
+import httpx
+
 from sources import collect
-log=logging.getLogger(__name__)
+
+log = logging.getLogger(__name__)
+CAPTION_LIMIT = 1024
+IMAGE_MAX_BYTES = 9_500_000
+
 
 def _news_date(value):
- if not value:
-  return "дата не указана"
- try:
-  parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-  return parsed.strftime("%d.%m.%Y")
- except (TypeError, ValueError):
-  return str(value)[:10]
+    if not value:
+        return "дата не указана"
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return parsed.strftime("%d.%m.%Y")
+    except (TypeError, ValueError):
+        return str(value)[:10]
 
-def render(items,date):
- parts=[f"🎬 <b>ZenDigest · {html.escape(date)}</b>",""]
- for i,x in enumerate(items,1):
-  parts += [f"<b>{i}. {html.escape(x.get('title_ru') or x['title'])}</b>",f"<i>{html.escape(x['category'])} · Новость: {_news_date(x.get('published_at'))}</i>",
-   html.escape(x['summary']),f"💡 {html.escape(x['why'])}",
-   f"🔗 <a href=\"{html.escape(x['url'],quote=True)}\">Источник</a>",""]
- parts.append("<i>Кино · Сериалы · Книги · Музыка</i>")
- return "\n".join(parts)
 
-async def run_digest(app,db,editor,settings):
- run_id=db.start()
- try:
-  fresh=await collect(settings.fetch_hours); inserted=db.add(fresh); pending=db.pending(settings.fetch_hours)
-  if not pending:
-   db.finish(run_id,"empty",f"collected={len(fresh)} new={inserted}")
-   return {"status":"empty","collected":len(fresh),"new":inserted,"published":0}
-  selected=await editor.edit(pending,settings.max_items)
-  if not selected:
-   db.finish(run_id,"empty","No suitable stories selected by editor")
-   return {"status":"empty","collected":len(fresh),"new":inserted,"published":0}
-  db.annotate(selected); originals={x["url"]:x for x in pending}
-  items=[{**originals[x["url"]],**x} for x in selected]
-  text=render(items,datetime.now(settings.timezone).strftime("%d.%m.%Y"))
-  while len(text)>3900 and len(items)>1:
-   items.pop(); text=render(items,datetime.now(settings.timezone).strftime("%d.%m.%Y"))
-  await app.bot.send_message(chat_id=settings.channel,text=text,parse_mode="HTML")
-  db.mark([x["url"] for x in items])
-  db.finish(run_id,"published",f"collected={len(fresh)} new={inserted} sent={len(items)}")
-  return {"status":"published","collected":len(fresh),"new":inserted,"published":len(items)}
- except Exception as e:
-  db.finish(run_id,"error",f"{type(e).__name__}: {e}"); log.exception("Digest failed"); raise
+def _telegram_length(value):
+    # Telegram entities and message lengths use UTF-16 code units.
+    return len(value.encode("utf-16-le")) // 2
+
+
+def _truncate_utf16(value, max_units):
+    result = []
+    used = 0
+    for character in value:
+        units = len(character.encode("utf-16-le")) // 2
+        if used + units > max_units:
+            break
+        result.append(character)
+        used += units
+    return "".join(result).rstrip()
+
+
+def build_caption(item, digest_date):
+    title = _truncate_utf16(
+        (item.get("title_ru") or item.get("title") or "Культурная новость").strip(), 180
+    )
+    category = item.get("category", "Культура")
+    summary = (item.get("summary") or "").strip()
+    why = _truncate_utf16((item.get("why") or "").strip(), 180)
+    url = (item.get("url") or "").strip()
+
+    if not url or not item.get("image_url"):
+        raise ValueError("A Telegram photo post requires both source URL and image URL")
+
+    prefix = f"🎬 {title}\\n{category.upper()} · {_news_date(item.get('published_at'))}\\n\\n"
+    suffix = f"\\n\\n💡 {why}\\n\\n🔗 Источник: {url}"
+
+    # Keep the source link intact. If needed, reduce the editorial note and headline
+    # before allocating the remaining Telegram caption budget to the story itself.
+    while _telegram_length(prefix + suffix) > CAPTION_LIMIT and why:
+        why = _truncate_utf16(why, max(0, _telegram_length(why) - 20))
+        suffix = f"\\n\\n💡 {why}\\n\\n🔗 Источник: {url}"
+    while _telegram_length(prefix + suffix) > CAPTION_LIMIT and title:
+        title = _truncate_utf16(title, max(0, _telegram_length(title) - 20))
+        prefix = f"🎬 {title}\\n{category.upper()} · {_news_date(item.get('published_at'))}\\n\\n"
+
+    available = CAPTION_LIMIT - _telegram_length(prefix + suffix)
+    if available < 0:
+        raise ValueError("Source URL is too long for a single Telegram photo caption")
+    body = _truncate_utf16(summary, available)
+    caption = prefix + body + suffix
+
+    if _telegram_length(caption) > CAPTION_LIMIT:
+        raise ValueError("Caption exceeds Telegram's 1024-character limit")
+    return caption
