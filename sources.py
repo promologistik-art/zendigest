@@ -37,8 +37,9 @@ def clean_url(url):
 
 
 def _image_url(entry):
-    # Prefer publisher-provided media metadata in the RSS entry.
-    for field in ("media_thumbnail", "media_content"):
+    # Prefer the largest publisher-supplied media_content image, not RSS thumbnails.
+    candidates = []
+    for field in ("media_content", "media_thumbnail"):
         for media in entry.get(field, []) or []:
             url = media.get("url")
             media_type = str(media.get("type", "")).lower()
@@ -50,22 +51,38 @@ def _image_url(entry):
                 or path.endswith((".jpg", ".jpeg", ".png", ".webp", ".gif"))
             )
             if url and is_image:
-                return clean_url(url)
+                try:
+                    width = int(media.get("width") or 0)
+                except (TypeError, ValueError):
+                    width = 0
+                candidates.append((width, 1 if field == "media_content" else 0, clean_url(url)))
+    if candidates:
+        candidates.sort(reverse=True)
+        return candidates[0][2]
 
     for link in entry.get("links", []) or []:
         media_type = str(link.get("type", "")).lower()
         if link.get("href") and media_type.startswith("image/"):
             return clean_url(link["href"])
 
-    # Some feeds embed the lead image in the HTML summary/content.
+    # Prefer the largest srcset image embedded in RSS HTML.
     html_fields = [entry.get("summary", "")]
     html_fields.extend(item.get("value", "") for item in entry.get("content", []) or [])
     for value in html_fields:
-        match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', value or "", re.I)
+        srcset = re.search(r'<img[^>]+srcset=["\\']([^"\\']+)["\\']', value or "", re.I)
+        if srcset:
+            choices = []
+            for candidate in srcset.group(1).split(","):
+                parts = candidate.strip().split()
+                if parts:
+                    width_match = re.search(r"(\\d+)w$", parts[-1]) if len(parts) > 1 else None
+                    choices.append((int(width_match.group(1)) if width_match else 0, parts[0]))
+            if choices:
+                return clean_url(max(choices)[1])
+        match = re.search(r'<img[^>]+src=["\\']([^"\\']+)["\\']', value or "", re.I)
         if match:
             return clean_url(match.group(1))
     return None
-
 
 async def resolve_article_url(client, url):
     host = (urlsplit(url).hostname or "").lower()
