@@ -69,17 +69,17 @@ def _image_url(entry):
     html_fields = [entry.get("summary", "")]
     html_fields.extend(item.get("value", "") for item in entry.get("content", []) or [])
     for value in html_fields:
-        srcset = re.search(r'<img[^>]+srcset=["\\']([^"\\']+)["\\']', value or "", re.I)
+        srcset = re.search(r"""<img[^>]+srcset=["']([^"']+)["']""", value or "", re.I)
         if srcset:
             choices = []
             for candidate in srcset.group(1).split(","):
                 parts = candidate.strip().split()
                 if parts:
-                    width_match = re.search(r"(\\d+)w$", parts[-1]) if len(parts) > 1 else None
+                    width_match = re.search(r"(\d+)w$", parts[-1]) if len(parts) > 1 else None
                     choices.append((int(width_match.group(1)) if width_match else 0, parts[0]))
             if choices:
                 return clean_url(max(choices)[1])
-        match = re.search(r'<img[^>]+src=["\\']([^"\\']+)["\\']', value or "", re.I)
+        match = re.search(r"""<img[^>]+src=["']([^"']+)["']""", value or "", re.I)
         if match:
             return clean_url(match.group(1))
     return None
